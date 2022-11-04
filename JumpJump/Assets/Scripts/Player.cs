@@ -1,9 +1,18 @@
 ﻿using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Text.RegularExpressions;
+using Assets.Scripts;
 using DG.Tweening;
+using OpenBLive.Runtime.Data;
+using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Analytics;
+using UnityEngine.Events;
+using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
+using UnityEngine.UI.Extensions.EasingCore;
 using Random = UnityEngine.Random;
 
 [Serializable]
@@ -17,6 +26,9 @@ class QueryRankResult
 {
     public List<GameScore> results = null;
 }
+
+//头像
+//https://i1.hdslb.com/bfs/face/36d64430d71128d74b6b573806325c0590a097a8.jpg@240w_240h_1c_1s.webp
 
 public class Player : MonoBehaviour
 {
@@ -68,6 +80,21 @@ public class Player : MonoBehaviour
     // 重新开始按钮
     public Button RestartButton;
 
+    //摄像头
+    public Camera thisCamera;
+
+    //stage存储
+    private List<GameObject> stages = new List<GameObject>();
+
+    //stage颜色
+    private Color defaultColor;
+
+    //最后一个格子
+    private GameObject lastStage;
+
+    //最新采用的头像
+    private string lastUrl = "";
+
     public string LeanCloudAppId;
     public string LeanCloudAppKey;
 
@@ -81,8 +108,30 @@ public class Player : MonoBehaviour
     Vector3 _direction = new Vector3(1, 0, 0);
     private float _scoreAnimationStartTime;
     private int _lastReward = 1;
-    private LeanCloudRestAPI _leanCloud;
     private bool _enableInput = true;
+
+    public UnityEvent LinkDMEvent;//连接成功时触发
+
+    private void Awake()
+    {
+        if (ConnectViaCode.Instance.vec_player_pos != Vector3.zero)
+        {
+            this.transform.position = ConnectViaCode.Instance.vec_player_pos;
+        }
+        else
+        {
+            ConnectViaCode.Instance.vec_player_pos = this.transform.position;
+        }
+
+        if (ConnectViaCode.Instance.vec_camera_pos != Vector3.zero)
+        {
+            thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
+        }
+        else
+        {
+            ConnectViaCode.Instance.vec_camera_pos = thisCamera.transform.position;
+        }
+    }
 
     // Use this for initialization
     void Start()
@@ -91,63 +140,99 @@ public class Player : MonoBehaviour
         _rigidbody.centerOfMass = new Vector3(0, 0, 0);
 
         _currentStage = Stage;
+        defaultColor = Stage.GetComponent<Renderer>().material.color;
         SpawnStage();
 
-        _cameraRelativePosition = Camera.main.transform.position - transform.position;
+        _cameraRelativePosition = thisCamera.transform.position - transform.position;
 
         SaveButton.onClick.AddListener(OnClickSaveButton);
-        RestartButton.onClick.AddListener(() => { SceneManager.LoadScene(0); });
+        RestartButton.onClick.AddListener(OnRestart);
 
-        _leanCloud = new LeanCloudRestAPI(LeanCloudAppId, LeanCloudAppKey);
+        //_leanCloud = new LeanCloudRestAPI(LeanCloudAppId, LeanCloudAppKey);
+
+        //if (PlayerPrefs.GetInt("connected",0) == 0)
+        //{
+        //    ConnectViaCode.Instance?.LinkStart("BLQEOWOU988W7");
+        //}
+        //ConnectViaCode.Instance?.LinkStart("BLQEOWOU988W7");
+
+        if (ConnectViaCode.Instance != null)
+        {
+            ConnectViaCode.Instance.ReceiveDM += ReceiveMsg;  
+        }
+
+        //DBHelper db = new DBHelper();
+        //db.initDB();
+    }
+
+    private void OnApplicationQuit()
+    {
+        PlayerPrefs.SetInt("connected", 0);
+        Debug.Log("OnDestroy");
+    }
+
+    protected virtual void ReceiveMsg(Dm dm)
+    {
+        string num = dm.msg;
+        if (num != null && IsNumber(num))
+        {
+            float elapse = Convert.ToSingle(num) / 10;
+            OnJump(elapse);
+            lastUrl = dm.userFace;
+        }
+        else
+        {
+            Debug.Log("非数字：" + num);
+        }
     }
 
     // Update is called once per frame
     void Update()
     {
-        if (_enableInput)
-        {
-            if (Input.GetMouseButtonDown(0))
-            {
-                _startTime = Time.time;
-                Particle.SetActive(true);
-            }
+        //if (_enableInput || _currentStage == Stage)
+        //{
+        //    if (Input.GetMouseButtonDown(0))
+        //    {
+        //        _startTime = Time.time;
+        //        Particle.SetActive(true);
+        //    }
 
-            if (Input.GetMouseButtonUp(0))
-            {
-                // 计算总共按下空格的时长
-                var elapse = Time.time - _startTime;
-                OnJump(elapse);
-                Particle.SetActive(false);
+        //    if (Input.GetMouseButtonUp(0))
+        //    {
+        //        // 计算总共按下空格的时长
+        //        var elapse = Time.time - _startTime;
+        //        OnJump(elapse);
+        //        Particle.SetActive(false);
 
-                //还原小人的形状
-                Body.transform.DOScale(0.1f, 0.2f);
-                Head.transform.DOLocalMoveY(0.29f, 0.2f);
+        //        //还原小人的形状
+        //        Body.transform.DOScale(0.1f, 0.2f);
+        //        Head.transform.DOLocalMoveY(0.29f, 0.2f);
 
-                //还原盒子的形状
-                _currentStage.transform.DOLocalMoveY(-0.25f, 0.2f);
-                _currentStage.transform.DOScaleY(0.5f, 0.2f);
+        //        //还原盒子的形状
+        //        _currentStage.transform.DOLocalMoveY(-0.25f, 0.2f);
+        //        _currentStage.transform.DOScaleY(0.5f, 0.2f);
 
-                _enableInput = false;
-            }
+        //        _enableInput = false;
+        //    }
 
-            // 处理按下空格时小人和盒子的动画
-            if (Input.GetMouseButton(0))
-            {
-                //添加限定，盒子最多缩放一半
-                if (_currentStage.transform.localScale.y > 0.3)
-                {
-                    Body.transform.localScale += new Vector3(1, -1, 1) * 0.05f * Time.deltaTime;
-                    Head.transform.localPosition += new Vector3(0, -1, 0) * 0.1f * Time.deltaTime;
+        //    // 处理按下空格时小人和盒子的动画
+        //    if (Input.GetMouseButton(0))
+        //    {
+        //        //添加限定，盒子最多缩放一半
+        //        if (_currentStage.transform.localScale.y > 0.3)
+        //        {
+        //            //Body.transform.localScale += new Vector3(1, -1, 1) * 0.05f * Time.deltaTime;
+        //            //Head.transform.localPosition += new Vector3(0, -1, 0) * 0.1f * Time.deltaTime;
 
-                    _currentStage.transform.localScale += new Vector3(0, -1, 0) * 0.15f * Time.deltaTime;
-                    _currentStage.transform.localPosition += new Vector3(0, -1, 0) * 0.15f * Time.deltaTime;
-                }
-            }
-        }
+        //            //_currentStage.transform.localScale += new Vector3(0, -1, 0) * 0.15f * Time.deltaTime;
+        //            //_currentStage.transform.localPosition += new Vector3(0, -1, 0) * 0.15f * Time.deltaTime;
+        //        }
+        //    }
+        //}
 
-        // 是否显示飘分效果
-        if (_isUpdateScoreAnimation)
-            UpdateScoreAnimation();
+        //// 是否显示飘分效果
+        //if (_isUpdateScoreAnimation)
+        //    UpdateScoreAnimation();
     }
 
     /// <summary>
@@ -157,7 +242,7 @@ public class Player : MonoBehaviour
     void OnJump(float elapse)
     {
         _rigidbody.AddForce(new Vector3(0, 5f, 0) + (_direction) * elapse * Factor, ForceMode.Impulse);
-        transform.DOLocalRotate(new Vector3(0, 0, -360), 0.6f, RotateMode.LocalAxisAdd);
+        //transform.DOLocalRotate(new Vector3(0, 0, -360), 0.6f, RotateMode.LocalAxisAdd);
     }
 
     /// <summary>
@@ -169,22 +254,50 @@ public class Player : MonoBehaviour
         if (BoxTemplates.Length > 0)
         {
             // 从盒子库中随机取盒子进行动态生成
-            prefab = BoxTemplates[Random.Range(0, BoxTemplates.Length)];
+            //prefab = BoxTemplates[Random.Range(0, BoxTemplates.Length)];
+            prefab = BoxTemplates[1];
         }
         else
         {
             prefab = Stage;
         }
 
+        if (lastStage && lastUrl!="")
+        {
+            loadLastImage(lastStage, lastUrl);
+        }
+
         var stage = Instantiate(prefab);
+
+        //加载图片
+        //string url = "https://i1.hdslb.com/bfs/face/36d64430d71128d74b6b573806325c0590a097a8.jpg";
+        //var loadImage = stage.GetComponent<LoadImage>();
+        //if (loadImage != null)
+        //{
+        //    loadImage.setMaterial(url);
+        //}
         stage.transform.position = _currentStage.transform.position + _direction * Random.Range(1.1f, MaxDistance);
 
         var randomScale = Random.Range(0.5f, 1);
         stage.transform.localScale = new Vector3(randomScale, 0.5f, randomScale);
 
+        stages.Add(stage);
+        lastStage = stage;
+
         // 重载函数 或 重载方法
         stage.GetComponent<Renderer>().material.color =
             new Color(Random.Range(0f, 1), Random.Range(0f, 1), Random.Range(0f, 1));
+    }
+
+    //加载图片
+    void loadLastImage(GameObject obj, string url)
+    {
+        var loadImage = obj.GetComponent<LoadImage>();
+        if (loadImage != null)
+        {
+            loadImage.setMaterial(url);
+            obj.GetComponent<Renderer>().material.color = defaultColor;
+        }
     }
 
     void OnCollisionExit(Collision collision)
@@ -197,19 +310,19 @@ public class Player : MonoBehaviour
     /// </summary>
     void OnCollisionEnter(Collision collision)
     {
-        Debug.Log(collision.gameObject.name);
+ 
         if (collision.gameObject.name == "Ground")
         {
             OnGameOver();
         }
         else
         {
-            if (_currentStage != collision.gameObject)
+            if (_currentStage != collision.gameObject && collision.gameObject != Stage)
             {
                 var contacts = collision.contacts;
 
                 //check if player's feet on the stage
-                if (contacts.Length == 1 && contacts[0].normal == Vector3.up)
+                if (contacts.Length == 4)
                 {
                     _currentStage = collision.gameObject;
                     AddScore(contacts);
@@ -219,17 +332,18 @@ public class Player : MonoBehaviour
 
                     _enableInput = true;
                 }
-                else // body collides with the box
-                {
-                    OnGameOver();
-                }
+                //else // body collides with the box
+                //{
+                    //OnGameOver();
+                    int a = 1;
+                //}
             }
             else //still on the same box
             {
                 var contacts = collision.contacts;
 
                 //check if player's feet on the stage
-                if (contacts.Length == 1 && contacts[0].normal == Vector3.up)
+                if (contacts.Length == 4) //contacts[0].normal == Vector3.up
                 {
                     _enableInput = true;
                 }
@@ -269,16 +383,8 @@ public class Player : MonoBehaviour
 
     private void OnGameOver()
     {
-        if (_score > 0)
-        {
-            //本局游戏结束，如果得分大于0，显示上传分数panel
-            SaveScorePanel.SetActive(true);
-        }
-        else
-        {
-            //否则直接显示排行榜
-            ShowRankPanel();
-        }
+        SaveScorePanel.SetActive(true);
+        //OnRestart();
     }
 
     /// <summary>
@@ -300,7 +406,7 @@ public class Player : MonoBehaviour
             _isUpdateScoreAnimation = false;
 
         var playerScreenPos =
-            RectTransformUtility.WorldToScreenPoint(Camera.main, transform.position);
+            RectTransformUtility.WorldToScreenPoint(thisCamera, transform.position);
         SingleScoreText.transform.position = playerScreenPos +
                                              Vector2.Lerp(Vector2.zero, new Vector2(0, 200),
                                                  Time.time - _scoreAnimationStartTime);
@@ -323,7 +429,7 @@ public class Player : MonoBehaviour
     /// </summary>
     void MoveCamera()
     {
-        Camera.main.transform.DOMove(transform.position + _cameraRelativePosition, 1);
+        thisCamera.transform.DOMove(transform.position + _cameraRelativePosition, 1);
     }
 
     /// <summary>
@@ -331,18 +437,28 @@ public class Player : MonoBehaviour
     /// </summary>
     void OnClickSaveButton()
     {
-        var nickname = NameField.text;
+        SaveScorePanel.SetActive(false);
+    }
 
-        if (nickname.Length == 0)
-            return;
+    void OnRestart()
+    {
+        thisCamera.transform.DOKill();
 
-        //创建一个GameScore分数对象
-        GameScore gameScore = new GameScore();
-        gameScore.score = _score;
-        gameScore.playerName = nickname;
+        foreach (GameObject item in stages)
+        {
+            Destroy(item);
+        }
 
-        //异步保存
-        StartCoroutine(_leanCloud.Create("GameScore", JsonUtility.ToJson(gameScore, false), ShowRankPanel));
+        _currentStage = Stage;
+        RandomDirection();
+        SpawnStage();        
+        _score = 0;
+        _enableInput = true;
+        TotalScoreText.text = _score.ToString();
+
+        this.transform.position = ConnectViaCode.Instance.vec_player_pos;
+        thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
+
         SaveScorePanel.SetActive(false);
     }
 
@@ -351,36 +467,20 @@ public class Player : MonoBehaviour
     /// </summary>
     void ShowRankPanel()
     {
-        //获取GameScore数据对象，降序排列取前10个数据
-        var param = new Dictionary<string, object>();
-        param.Add("order", "-score");
-        param.Add("limit", 10);
-        StartCoroutine(_leanCloud.Query("GameScore", param, t =>
-        {
-            var results = JsonUtility.FromJson<QueryRankResult>(t);
-            var scores = new List<KeyValuePair<string, string>>();
 
-            //将数据转化为字符串
-            foreach (var result in results.results)
-            {
-                scores.Add(
-                    new KeyValuePair<string, string>(result.playerName, result.score.ToString()));
-            }
-
-            foreach (var score in scores)
-            {
-                var item = Instantiate(RankName);
-                item.SetActive(true);
-                item.GetComponent<Text>().text = score.Key;
-                item.transform.SetParent(RankName.transform.parent);
-
-                item = Instantiate(RankScore);
-                item.SetActive(true);
-                item.GetComponent<Text>().text = score.Value;
-                item.transform.SetParent(RankScore.transform.parent);
-            }
-
-            RankPanel.SetActive(true);
-        }));
     }
+
+    /// <summary>
+    /// 判断字符串是否是数字
+    /// </summary>
+    public static bool IsNumber(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return false;
+        const string pattern = "^[0-9]*$";
+        Regex rx = new Regex(pattern);
+        return rx.IsMatch(s);
+    }
+
+
+
 }
