@@ -114,23 +114,23 @@ public class Player : MonoBehaviour
 
     private void Awake()
     {
-        if (ConnectViaCode.Instance.vec_player_pos != Vector3.zero)
-        {
-            this.transform.position = ConnectViaCode.Instance.vec_player_pos;
-        }
-        else
-        {
-            ConnectViaCode.Instance.vec_player_pos = this.transform.position;
-        }
+        //if (ConnectViaCode.Instance.vec_player_pos != Vector3.zero)
+        //{
+        //    this.transform.position = ConnectViaCode.Instance.vec_player_pos;
+        //}
+        //else
+        //{
+        //    ConnectViaCode.Instance.vec_player_pos = this.transform.position;
+        //}
 
-        if (ConnectViaCode.Instance.vec_camera_pos != Vector3.zero)
-        {
-            thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
-        }
-        else
-        {
-            ConnectViaCode.Instance.vec_camera_pos = thisCamera.transform.position;
-        }
+        //if (ConnectViaCode.Instance.vec_camera_pos != Vector3.zero)
+        //{
+        //    thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
+        //}
+        //else
+        //{
+        //    ConnectViaCode.Instance.vec_camera_pos = thisCamera.transform.position;
+        //}
     }
 
     // Use this for initialization
@@ -161,8 +161,9 @@ public class Player : MonoBehaviour
             ConnectViaCode.Instance.ReceiveDM += ReceiveMsg;  
         }
 
-        //DBHelper db = new DBHelper();
-        //db.initDB();
+        DBHelper db = new DBHelper();
+        db.initDB();
+
     }
 
     private void OnApplicationQuit()
