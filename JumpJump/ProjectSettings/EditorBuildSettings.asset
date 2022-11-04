@@ -5,6 +5,10 @@ EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
   m_Scenes:
-  - enabled: 0
+  - enabled: 1
+    path: Assets/OpenBLive/Samples/ConnectViaCode.unity
+    guid: 8170766b5ac44ec4e9728f5553e75e83
+  - enabled: 1
     path: Assets/_Scenes/JumpJump.unity
     guid: ba343a229cb530946ae3529d16c55dc0
+  m_configObjects: {}
