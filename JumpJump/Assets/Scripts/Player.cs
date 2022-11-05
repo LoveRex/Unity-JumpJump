@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using Assets.Scripts;
 using DG.Tweening;
+using MongoDB.Bson;
 using OpenBLive.Runtime.Data;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -13,6 +14,7 @@ using UnityEngine.Networking;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.UI.Extensions.EasingCore;
+using UnityEngine.UIElements;
 using Random = UnityEngine.Random;
 
 [Serializable]
@@ -66,7 +68,7 @@ public class Player : MonoBehaviour
     public InputField NameField;
 
     // 保存按钮
-    public Button SaveButton;
+    public UnityEngine.UI.Button SaveButton;
 
     // 排行榜面板
     public GameObject RankPanel;
@@ -78,7 +80,7 @@ public class Player : MonoBehaviour
     public GameObject RankScore;
 
     // 重新开始按钮
-    public Button RestartButton;
+    public UnityEngine.UI.Button RestartButton;
 
     //摄像头
     public Camera thisCamera;
@@ -95,8 +97,10 @@ public class Player : MonoBehaviour
     //最新采用的头像
     private string lastUrl = "";
 
-    public string LeanCloudAppId;
-    public string LeanCloudAppKey;
+    //排行榜
+    public GameObject scrollView;
+    public GameObject rankItem;
+    public GameObject scrollContent;
 
     private Rigidbody _rigidbody;
     private float _startTime;
@@ -148,7 +152,6 @@ public class Player : MonoBehaviour
         SaveButton.onClick.AddListener(OnClickSaveButton);
         RestartButton.onClick.AddListener(OnRestart);
 
-        //_leanCloud = new LeanCloudRestAPI(LeanCloudAppId, LeanCloudAppKey);
 
         //if (PlayerPrefs.GetInt("connected",0) == 0)
         //{
@@ -161,8 +164,14 @@ public class Player : MonoBehaviour
             ConnectViaCode.Instance.ReceiveDM += ReceiveMsg;  
         }
 
-        DBHelper db = new DBHelper();
-        db.initDB();
+        //DBHelper db = new DBHelper();
+        //db.getAllInfo("user");
+
+        //BsonDocument document = new BsonDocument();
+        //document.Add("b_name", "aaaa");
+        //document.Add("c_id", 33);
+        //db.insertDB("user", document);
+        RefreshRank();
 
     }
 
@@ -188,8 +197,15 @@ public class Player : MonoBehaviour
     }
 
     // Update is called once per frame
+    private double time_refreshrank = 10.0;
     void Update()
     {
+        time_refreshrank -= Time.deltaTime;
+        if (time_refreshrank < 0)
+        {
+            time_refreshrank = 10.0;
+            RefreshRank();
+        }
         //if (_enableInput || _currentStage == Stage)
         //{
         //    if (Input.GetMouseButtonDown(0))
@@ -231,9 +247,9 @@ public class Player : MonoBehaviour
         //    }
         //}
 
-        //// 是否显示飘分效果
-        //if (_isUpdateScoreAnimation)
-        //    UpdateScoreAnimation();
+        // 是否显示飘分效果
+        if (_isUpdateScoreAnimation)
+            UpdateScoreAnimation();
     }
 
     /// <summary>
@@ -481,6 +497,36 @@ public class Player : MonoBehaviour
         Regex rx = new Regex(pattern);
         return rx.IsMatch(s);
     }
+
+    /// <summary>
+    /// 刷新排行榜
+    /// </summary>
+    private void RefreshRank()
+    {
+        RemoveAllChildren(scrollContent);
+
+        List<BsonDocument> info = DBHelper.Instance.getAllInfo("rank");
+
+        foreach (BsonDocument doc in info)
+        {
+            GameObject obj = Instantiate(rankItem);
+            obj.GetComponent<Cell>().init(doc["name"].AsString, doc["score"].AsInt32, doc["head"].AsString);
+            obj.transform.SetParent(scrollContent.transform);
+        }
+        
+
+    }
+
+    public static void RemoveAllChildren(GameObject parent)
+    {
+        Transform transform;
+        for (int i = 0; i < parent.transform.childCount; i++)
+        {
+            transform = parent.transform.GetChild(i);
+            GameObject.Destroy(transform.gameObject);
+        }
+    }
+
 
 
 

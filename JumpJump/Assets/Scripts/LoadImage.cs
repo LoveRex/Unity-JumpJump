@@ -22,6 +22,11 @@ namespace Assets.Scripts
             StartCoroutine(DownMaterial(url));
         }
 
+        public void setSprite(string url)
+        {
+            StartCoroutine(DownMaterial(url));
+        }
+
         IEnumerator DownSprite(string url)
         {
             UnityWebRequest wr = new UnityWebRequest(url);

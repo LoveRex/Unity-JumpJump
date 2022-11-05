@@ -16,17 +16,55 @@ namespace Assets.Scripts
     }
     internal class DBHelper
     {
-        public void initDB()
+        private static DBHelper instance;
+        public static DBHelper Instance
         {
-            // Replace the uri string with your MongoDB deployment's connection string.
-            var client = new MongoClient(
-                "mongodb://localhost:27017/"
-            );
-            var database = client.GetDatabase("BT");
-            var collect = database.GetCollection<MyDocument>("user");
+            get { return instance ?? (instance = new DBHelper()); }
+        }
 
-            var filter = Builders<MyDocument>.Filter.Empty;
-            var result = collect.Find(filter).ToList();
+        private IMongoDatabase database
+        {
+            get { return client.GetDatabase("BT"); }
+        }
+
+        private static MongoClient _client;
+        private static MongoClient client
+        {
+            get { return _client ?? (_client = new MongoClient("mongodb://localhost:27017/")); }
+        }
+
+
+        /// <summary>
+        /// 获取collection表
+        /// </summary>
+        /// <param name="name"></param>
+        /// <returns></returns>
+        private IMongoCollection<BsonDocument> getCollection(string name)
+        {
+            return database.GetCollection<BsonDocument>(name);
+        }
+
+        /// <summary>
+        /// 获取表中所有信息
+        /// </summary>
+        /// <param name="str_collection">表名称</param>
+        public List<BsonDocument> getAllInfo(string str_collection)
+        {
+            var collection = getCollection(str_collection);
+            var filter = Builders<BsonDocument>.Filter.Empty;
+            var result = collection.Find(filter).ToList();
+            return result;
+        }
+
+        /// <summary>
+        /// 插入记录
+        /// </summary>
+        /// <param name="str_collection"></param>
+        /// <param name="document"></param>
+        public void insertDB(string str_collection, BsonDocument document)
+        {
+            var collection = getCollection(str_collection);
+            collection.InsertOne(document);
         }
     }
 }
