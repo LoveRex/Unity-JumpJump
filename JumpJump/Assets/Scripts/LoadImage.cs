@@ -24,7 +24,7 @@ namespace Assets.Scripts
 
         public void setSprite(string url)
         {
-            StartCoroutine(DownMaterial(url));
+            StartCoroutine(DownSprite(url));
         }
 
         IEnumerator DownSprite(string url)

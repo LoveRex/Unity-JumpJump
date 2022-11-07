@@ -2,11 +2,11 @@
 using System.Collections;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
+using Assets.ListView;
 using Assets.Scripts;
 using DG.Tweening;
 using MongoDB.Bson;
 using OpenBLive.Runtime.Data;
-using UnityEditor.SceneManagement;
 using UnityEngine;
 using UnityEngine.Analytics;
 using UnityEngine.Events;
@@ -16,18 +16,17 @@ using UnityEngine.UI;
 using UnityEngine.UI.Extensions.EasingCore;
 using UnityEngine.UIElements;
 using Random = UnityEngine.Random;
+using Slider = UnityEngine.UI.Slider;
 
-[Serializable]
-class GameScore
+public class BiliPlayer
 {
-    public int score;
-    public string playerName;
+    public long uid;
+    public string uname;
+    public string uface;
+    public long score;
 }
 
-class QueryRankResult
-{
-    public List<GameScore> results = null;
-}
+
 
 //头像
 //https://i1.hdslb.com/bfs/face/36d64430d71128d74b6b573806325c0590a097a8.jpg@240w_240h_1c_1s.webp
@@ -101,12 +100,30 @@ public class Player : MonoBehaviour
     public GameObject scrollView;
     public GameObject rankItem;
     public GameObject scrollContent;
+    public GameObject scrollPlayingContent;
+    public GameObject playingItem;
+
+    //进度条
+    public GameObject slider;
+    public GameObject slider_head;
+    private bool _movesilder = false;
+
+    //飘字
+    public GameObject posLbl;
+    public GameObject sysContent;
+
+    //记录当前玩家b站数据
+    private long cur_uid;
+    private string cur_uname;
+    private string cur_uface;
+    private string cur_msg;
+    
 
     private Rigidbody _rigidbody;
     private float _startTime;
     private GameObject _currentStage;
     private Vector3 _cameraRelativePosition;
-    private int _score;
+    private long _score;
     private bool _isUpdateScoreAnimation;
 
     Vector3 _direction = new Vector3(1, 0, 0);
@@ -118,23 +135,23 @@ public class Player : MonoBehaviour
 
     private void Awake()
     {
-        //if (ConnectViaCode.Instance.vec_player_pos != Vector3.zero)
-        //{
-        //    this.transform.position = ConnectViaCode.Instance.vec_player_pos;
-        //}
-        //else
-        //{
-        //    ConnectViaCode.Instance.vec_player_pos = this.transform.position;
-        //}
+        if (ConnectViaCode.Instance.vec_player_pos != Vector3.zero)
+        {
+            this.transform.position = ConnectViaCode.Instance.vec_player_pos;
+        }
+        else
+        {
+            ConnectViaCode.Instance.vec_player_pos = this.transform.position;
+        }
 
-        //if (ConnectViaCode.Instance.vec_camera_pos != Vector3.zero)
-        //{
-        //    thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
-        //}
-        //else
-        //{
-        //    ConnectViaCode.Instance.vec_camera_pos = thisCamera.transform.position;
-        //}
+        if (ConnectViaCode.Instance.vec_camera_pos != Vector3.zero)
+        {
+            thisCamera.transform.position = ConnectViaCode.Instance.vec_camera_pos;
+        }
+        else
+        {
+            ConnectViaCode.Instance.vec_camera_pos = thisCamera.transform.position;
+        }
     }
 
     // Use this for initialization
@@ -171,9 +188,12 @@ public class Player : MonoBehaviour
         //document.Add("b_name", "aaaa");
         //document.Add("c_id", 33);
         //db.insertDB("user", document);
-        RefreshRank();
 
+        ListBiliPlayer.Instance.LoadPlayerInfo();
+        RefreshRank();
+        
     }
+
 
     private void OnApplicationQuit()
     {
@@ -183,28 +203,138 @@ public class Player : MonoBehaviour
 
     protected virtual void ReceiveMsg(Dm dm)
     {
-        string num = dm.msg;
-        if (num != null && IsNumber(num))
+        if (ListBiliPlayer.Instance.isPlayingPlayer(dm.uid))
         {
-            float elapse = Convert.ToSingle(num) / 10;
-            OnJump(elapse);
-            lastUrl = dm.userFace;
+            string num = dm.msg;
+            bool is_number = IsNumeric(num, out double d_num);
+            if (num != null && is_number)
+            {
+                //更新数据
+                cur_msg = dm.msg;
+                cur_uid = dm.uid;
+                cur_uname = dm.userName;
+                cur_uface = dm.userFace;
+
+                float elapse = Convert.ToSingle(d_num) / 10;
+                OnJump(elapse);
+                lastUrl = dm.userFace;
+            }
+            else
+            {
+                Debug.Log("非数字：" + num);
+            }
         }
         else
         {
-            Debug.Log("非数字：" + num);
+            if (dm.msg == "加入" || dm.msg == "赞")
+            {
+                //判断是否超过人数
+                if (ListBiliPlayer.Instance.GetBiliPlayingPlayer().Count >= 5)
+                {
+                    ShowSysContent("当前人数已满，请稍后再试！");
+                    return;
+                }
+                
+                BiliPlayer player = new BiliPlayer();
+                player.uid = dm.uid;
+                player.uname = dm.userName;
+                player.uface = dm.userFace;
+                player.score = 0;
+                ListBiliPlayer.Instance.addPlayingPlayer(player);
+                //刷新队列显示ui
+                RefreshPlayingPlayer();
+            }
+        }
+        
+    }
+
+    /// <summary>
+    /// 系统提示消息
+    /// </summary>
+    /// <param name="content"></param>
+    public void ShowSysContent(string content)
+    {
+        GameObject obj = Instantiate(sysContent);
+        obj.transform.position = posLbl.transform.position;
+        obj.transform.SetParent(GameObject.Find("Canvas").transform);
+        
+        obj.transform.GetComponent<TextMovedByDOTween>().SetText(content);
+        obj.transform.GetComponent<TextMovedByDOTween>().TextMoved();
+    }
+
+    /// <summary>
+    /// 刷新玩家队列
+    /// </summary>
+    public void RefreshPlayingPlayer()
+    {
+        RemoveAllChildren(scrollPlayingContent);
+
+        List<BiliPlayer> lst_player = new List<BiliPlayer>();
+        lst_player = ListBiliPlayer.Instance.GetBiliPlayingPlayer();
+        foreach (var player in lst_player)
+        {
+            GameObject obj = Instantiate(playingItem);
+            obj.GetComponent<PlayingPlayerCell>().init(player.uname,player.score,player.uface);
+            obj.transform.SetParent(scrollPlayingContent.transform);
+        }
+
+        //进度条是否显示
+        if (lst_player.Count > 1)
+        {
+            resetSilder(true);
+            BiliPlayer p = ListBiliPlayer.Instance.GetFirstPlayeringPlayer();
+            slider_head.transform.GetComponent<LoadImage>().setSprite(p.uface);
+        }
+        else
+        {
+            resetSilder(false);
         }
     }
 
     // Update is called once per frame
-    private double time_refreshrank = 10.0;
+    private static double TIME_SLIDER = 20.0;
+    private double time_refreshrank = 5.0;
+    private double time_alive = 5.0;
+    private double time_slider = TIME_SLIDER;
     void Update()
     {
         time_refreshrank -= Time.deltaTime;
         if (time_refreshrank < 0)
         {
-            time_refreshrank = 10.0;
+            time_refreshrank = 5.0;
             RefreshRank();
+        }
+        if (SaveScorePanel.activeSelf)
+        {
+            time_alive -= Time.deltaTime;
+            if (time_alive < 0)
+            {
+                time_alive = 5.0;
+                SaveScorePanel.SetActive(false);
+                OnRestart();
+            }
+            
+        }
+        if (_movesilder)
+        {
+            time_slider -= Time.deltaTime;
+            setSliderValue((float)((TIME_SLIDER - time_slider) / TIME_SLIDER));
+            if (time_slider < 0)
+            {
+                time_slider = TIME_SLIDER;
+                BiliPlayer p = ListBiliPlayer.Instance.GetFirstPlayeringPlayer();
+                
+                ListBiliPlayer.Instance.SetFail();
+                RefreshPlayingPlayer();
+                if (ListBiliPlayer.Instance.GetBiliPlayingPlayer().Count < 1)
+                {
+                    OnGameOver();
+                }
+                else
+                {
+                    ShowSysContent(p.uname + "操作超时，已淘汰");
+                }
+            }
         }
         //if (_enableInput || _currentStage == Stage)
         //{
@@ -260,6 +390,7 @@ public class Player : MonoBehaviour
     {
         _rigidbody.AddForce(new Vector3(0, 5f, 0) + (_direction) * elapse * Factor, ForceMode.Impulse);
         //transform.DOLocalRotate(new Vector3(0, 0, -360), 0.6f, RotateMode.LocalAxisAdd);
+        this.transform.GetComponent<AudioSource>().Play();
     }
 
     /// <summary>
@@ -395,13 +526,34 @@ public class Player : MonoBehaviour
             _score += _lastReward;
             TotalScoreText.text = _score.ToString();
             ShowScoreAnimation();
+
+            recordRank(cur_uid, cur_uname, cur_uface, _lastReward);
+            recordPlaying(cur_uid, _lastReward);
         }
+    }
+
+    private void setSliderValue(float v)
+    {
+        slider.transform.GetComponent<Slider>().value = v;
+    }
+
+    private void resetSilder(bool active)
+    {
+        _movesilder = active;
+        slider.SetActive(active);
+        setSliderValue(0);
+        time_slider = TIME_SLIDER;
     }
 
     private void OnGameOver()
     {
         SaveScorePanel.SetActive(true);
+        resetSilder(false);
         //OnRestart();
+        ListBiliPlayer.Instance.FinishGame();
+        RefreshPlayingPlayer();
+
+        ShowSysContent("本局结束，5s后重新开始");
     }
 
     /// <summary>
@@ -457,6 +609,9 @@ public class Player : MonoBehaviour
         SaveScorePanel.SetActive(false);
     }
 
+    /// <summary>
+    /// 重新开始
+    /// </summary>
     void OnRestart()
     {
         thisCamera.transform.DOKill();
@@ -490,12 +645,19 @@ public class Player : MonoBehaviour
     /// <summary>
     /// 判断字符串是否是数字
     /// </summary>
-    public static bool IsNumber(string s)
+    public static bool IsNumeric(string s, out double result)
     {
-        if (string.IsNullOrWhiteSpace(s)) return false;
-        const string pattern = "^[0-9]*$";
-        Regex rx = new Regex(pattern);
-        return rx.IsMatch(s);
+        bool bReturn = true;
+        try
+        {
+            result = double.Parse(s);
+        }
+        catch
+        {
+            result = 0;
+            bReturn = false;
+        }
+        return bReturn;
     }
 
     /// <summary>
@@ -510,10 +672,74 @@ public class Player : MonoBehaviour
         foreach (BsonDocument doc in info)
         {
             GameObject obj = Instantiate(rankItem);
-            obj.GetComponent<Cell>().init(doc["name"].AsString, doc["score"].AsInt32, doc["head"].AsString);
+            obj.GetComponent<Cell>().init(doc["uname"].AsString, doc["score"].AsInt64, doc["uface"].AsString);
             obj.transform.SetParent(scrollContent.transform);
         }
-        
+
+        //ShowSysContent("已经刷新排行榜");
+    }
+
+    /// <summary>
+    /// 记录排行榜
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="uname"></param>
+    /// <param name="uface"></param>
+    /// <param name="score"></param>
+    private void recordRank(long uid, string uname, string uface, long add_score)
+    {
+        long all_score = 0;
+        //查询缓存是否存在
+        BiliPlayer player = ListBiliPlayer.Instance.GetBiliPlayer(uid);
+        if (player != null)
+        {
+            player.score += add_score;
+            all_score = player.score; 
+        }
+        else
+        {
+            BiliPlayer p = new BiliPlayer();
+            p.uid = uid;
+            p.uname = uname;
+            p.uface = uface;
+            p.score = add_score;
+            ListBiliPlayer.Instance.addAllPlayer(p);
+            all_score = add_score;
+        }
+
+        BsonDocument doc = new BsonDocument();
+        doc.Add("uid", uid);
+        doc.Add("uname", uname);
+        doc.Add("uface", uface);
+        doc.Add("score", all_score);
+
+        DBHelper.Instance.selectAndUpdateDB("rank", "uid", uid, "score", all_score, doc);
+
+    }
+
+    /// <summary>
+    /// 更新队列信息
+    /// </summary>
+    /// <param name="uid"></param>
+    /// <param name="uname"></param>
+    /// <param name="uface"></param>
+    /// <param name="add_score"></param>
+    private void  recordPlaying(long uid, long add_score)
+    {
+        //查询缓存是否存在
+        BiliPlayer playering = ListBiliPlayer.Instance.GetBiliPlayingPlayer(uid);
+        if (playering != null)
+        {
+            playering.score += add_score;
+        }
+
+        if (ListBiliPlayer.Instance.GetBiliPlayingPlayer().Count > 1)
+        {
+            ListBiliPlayer.Instance.SetNextPlayer();
+            resetSilder(true);
+        }
+
+        RefreshPlayingPlayer();
 
     }
 

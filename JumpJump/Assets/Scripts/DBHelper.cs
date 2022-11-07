@@ -52,7 +52,8 @@ namespace Assets.Scripts
         {
             var collection = getCollection(str_collection);
             var filter = Builders<BsonDocument>.Filter.Empty;
-            var result = collection.Find(filter).ToList();
+            var sort = Builders<BsonDocument>.Sort;
+            var result = collection.Find(filter).Sort(sort.Descending("score")).ToList();
             return result;
         }
 
@@ -66,5 +67,37 @@ namespace Assets.Scripts
             var collection = getCollection(str_collection);
             collection.InsertOne(document);
         }
+
+        /// <summary>
+        /// 查询是否存在，存在即更新，不存在插入
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="str_collection"></param>
+        /// <param name="q_name"></param>
+        /// <param name="q_value"></param>
+        /// <param name="u_name"></param>
+        /// <param name="u_value"></param>
+        /// <param name="document"></param>
+        public void selectAndUpdateDB<T>(string str_collection, string q_name, T q_value, string u_name, T u_value, BsonDocument document)
+        {
+            var collection = getCollection(str_collection);
+            var q_filter = Builders<BsonDocument>.Filter.Eq(q_name, q_value);
+            var q_result = collection.Find(q_filter).ToList();
+            if (q_result.Count > 0)
+            {
+                var u_filter = Builders<BsonDocument>.Filter;
+                var update = Builders<BsonDocument>.Update;
+                var project = Builders<BsonDocument>.Projection;
+                collection.UpdateOne(u_filter.Eq(q_name, q_value), update.Set(u_name, u_value));
+            }
+            else
+            {
+                insertDB(str_collection, document);
+            }
+
+
+            
+        }
+
     }
 }

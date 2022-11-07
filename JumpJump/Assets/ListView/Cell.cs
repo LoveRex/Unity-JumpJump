@@ -17,7 +17,7 @@ public class Cell : MonoBehaviour
         //GetComponent<Image>().color = new Color(Random.value, Random.value, Random.value);
     }
 
-    public void init(string name, int score, string url)
+    public void init(string name, long score, string url)
     {
         SetName(name);
         SetScore(score);
@@ -29,7 +29,7 @@ public class Cell : MonoBehaviour
         lbl_name.text = name;
     }
 
-    public void SetScore(int score)
+    public void SetScore(long score)
     {
         lbl_score.text = Convert.ToString(score) + "分";
     }
